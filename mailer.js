@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const log = require('./logger');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const SMTP_HOST = process.env.SMTP_HOST || '';
@@ -26,6 +27,10 @@ if (SMTP_HOST && !BREVO_API_KEY) {
     socketTimeout: 30000,
   });
 }
+
+const transportChannel = () =>
+  BREVO_API_KEY ? 'brevo-api (HTTPS/443)' : SMTP_HOST ? `smtp (${SMTP_HOST}:${SMTP_PORT})` : 'mock (no SMTP, no Brevo key)';
+log.info(`[mailer] using transport channel: ${transportChannel()}`);
 
 function reportLink(caseCode) {
   return `${BASE_URL}/report.html?case=${encodeURIComponent(caseCode)}`;
@@ -66,13 +71,14 @@ async function sendInviteEmail({ name, caseCode, email }) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const file = path.join(emailsDir, `${caseCode}-${stamp}.html`);
     fs.writeFileSync(file, html);
-    console.log(`[mailer] MOCK MODE (no SMTP_HOST and no BREVO_API_KEY): email to ${email}`);
-    console.log(`[mailer] Subject: ${subject}`);
-    console.log(`[mailer] Preview saved to ${file}`);
-    console.log(`[mailer] Link: ${reportLink(caseCode)}`);
+    log.info(`[mailer] MOCK MODE (no SMTP_HOST and no BREVO_API_KEY): email to ${email}`);
+    log.info(`[mailer] Subject: ${subject}`);
+    log.info(`[mailer] Preview saved to ${file}`);
+    log.info(`[mailer] Link: ${reportLink(caseCode)}`);
     return { mock: true, previewPath: file };
   }
 
+  log.info(`[mailer] sending via SMTP (${SMTP_HOST}:${SMTP_PORT}) to ${email}`);
   try {
     const info = await transporter.sendMail({
       from: { name: FROM_NAME, address: FROM_EMAIL },
@@ -80,10 +86,15 @@ async function sendInviteEmail({ name, caseCode, email }) {
       subject,
       html,
     });
-    console.log(`[mailer] Sent via SMTP (${SMTP_HOST}) to ${email} (messageId=${info.messageId})`);
+    log.info(`[mailer] Sent via SMTP (${SMTP_HOST}) to ${email} (messageId=${info.messageId})`);
     return { mock: false, messageId: info.messageId };
   } catch (err) {
-    console.error('[mailer] SMTP send failed:', err.message);
+    log.error(
+      `[mailer] SMTP send failed to ${email}: ${err.message}` +
+        (err.responseCode ? ` (code=${err.responseCode})` : '') +
+        (err.response ? ` response=${err.response}` : '')
+    );
+    log.error(`[mailer] SMTP failure details: ${JSON.stringify(err, Object.getOwnPropertyNames(err))}`);
     throw err;
   }
 }
@@ -99,6 +110,7 @@ async function sendViaBrevoApi({ name, email, subject, html, caseCode }) {
   let lastErr = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
+      log.info(`[mailer] Brevo API attempt ${attempt}/2 to ${email} (HTTPS/443)`);
       const res = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
@@ -111,17 +123,18 @@ async function sendViaBrevoApi({ name, email, subject, html, caseCode }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        console.log(`[mailer] Sent via Brevo API to ${email} (messageId=${data.messageId})`);
+        log.info(`[mailer] Sent via Brevo API to ${email} (messageId=${data.messageId})`);
         return { mock: false, messageId: data.messageId };
       }
       lastErr = new Error(`Brevo API ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
-      console.error(`[mailer] Brevo API attempt ${attempt}/2 failed:`, lastErr.message);
+      log.error(`[mailer] Brevo API attempt ${attempt}/2 rejected: status=${res.status} ${res.statusText} body=${JSON.stringify(data)}`);
     } catch (err) {
       lastErr = err;
-      console.error(`[mailer] Brevo API attempt ${attempt}/2 network error:`, err.message);
+      log.error(`[mailer] Brevo API attempt ${attempt}/2 error: ${err.message}`);
     }
     if (attempt === 1) await new Promise((r) => setTimeout(r, 1500));
   }
+  log.error(`[mailer] Brevo API failed after 2 attempts for ${email}: ${lastErr.message}`);
   throw lastErr;
 }
 

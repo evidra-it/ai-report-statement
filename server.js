@@ -84,9 +84,11 @@ app.post('/api/cases', isAdmin, async (req, res) => {
     await sendInviteEmail({ name, email, caseCode });
     db.prepare('UPDATE cases SET status = ?, email_sent_at = datetime(\'now\') WHERE id = ?').run('invited', caseRow.id);
     caseRow.status = 'invited';
+    log.info(`[case] ${caseCode} email sent to ${email} (status=invited)`);
   } catch (err) {
     db.prepare("UPDATE cases SET status = 'email_failed' WHERE id = ?").run(caseRow.id);
     caseRow.status = 'email_failed';
+    log.error(`[case] ${caseCode} email FAILED for ${email}: ${err.message} (status=email_failed)`);
     return res.status(502).json({ error: 'Case created but email failed: ' + err.message, case: caseRow });
   }
 
