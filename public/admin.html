@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Initiator - Forensic Investigation Portal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">Forensic Investigation Portal</div>
+      <div class="sub">Case Initiator</div>
+    </div>
+    <button class="btn ghost" id="logout-btn" style="color:#fff;border-color:#fff">Logout</button>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <h1>Initiate a Case</h1>
+      <p class="muted">A case code is auto-generated. On submission, an email with a secure report link is sent to the forensic investigator.</p>
+      <form id="initiator-form">
+        <label for="case-code">Case Code <span class="case-code-chip">auto-generated</span></label>
+        <input type="text" id="case-code" readonly>
+        <div class="form-grid">
+          <div>
+            <label for="name">Name</label>
+            <input type="text" id="name" placeholder="e.g. Rahul Sharma" required>
+          </div>
+          <div>
+            <label for="email">Email</label>
+            <input type="email" id="email" placeholder="e.g. investigator@agency.com" required>
+          </div>
+        </div>
+        <div id="alert" class="alert hidden"></div>
+        <button type="submit" class="btn" id="submit-btn">Generate Code &amp; Send Invitation</button>
+      </form>
+    </div>
+
+<div class="card">
+      <h2>Cases</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Case Code</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="cases-body">
+          <tr><td colspan="6">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 id="modal-title" style="margin:0">Statement</h2>
+        <button class="btn danger" id="modal-close">Close</button>
+      </div>
+      <div id="modal-error" class="alert error hidden"></div>
+      <div id="modal-copy-row" class="hidden" style="margin-bottom:10px">
+        <button class="btn ghost" id="modal-copy">Copy Statement</button>
+      </div>
+      <div id="modal-body" class="statement"></div>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    const statusMap = {
+      initiated: 'Initiated',
+      invited: 'Invitation sent',
+      report_submitted: 'Report submitted',
+      email_failed: 'Email failed',
+    };
+
+    async function ensureAuth() {
+      const res = await fetch('/api/me');
+      const data = await res.json();
+      if (!data.authenticated) window.location.href = '/';
+      return data.admin;
+    }
+
+    async function loadNextCode() {
+      const res = await fetch('/api/cases/next-code');
+      if (res.ok) {
+        const data = await res.json();
+        document.getElementById('case-code').value = data.case_code;
+      }
+    }
+
+    async function loadCases() {
+      const res = await fetch('/api/cases');
+      const cases = await res.json();
+      const tbody = document.getElementById('cases-body');
+      if (!cases.length) {
+        tbody.innerHTML = '<tr><td colspan="6">No cases yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = cases.map(c => `
+        <tr>
+          <td><strong>${c.case_code}</strong></td>
+          <td>${escapeHtml(c.name)}</td>
+          <td>${escapeHtml(c.email)}</td>
+          <td><span class="badge ${c.status}">${statusMap[c.status] || c.status}</span></td>
+          <td>${c.created_at}</td>
+          <td>${c.status === 'report_submitted' ? `<button class="btn ghost" data-stmt="${c.id}" style="margin-top:0">Generate Statement</button>` : '<span style="color:#9ca3af">—</span>'}</td>
+        </tr>
+      `).join('');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    const form = document.getElementById('initiator-form');
+    const alertBox = document.getElementById('alert');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.classList.add('hidden');
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating case & sending email...';
+      try {
+        const res = await fetch('/api/cases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: document.getElementById('name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertBox.textContent = data.error || 'Something went wrong';
+          alertBox.classList.add('error');
+        } else {
+          alertBox.textContent = `Case ${data.case.case_code} created. Invitation sent to ${data.case.email}.`;
+          alertBox.classList.add('success');
+          document.getElementById('name').value = '';
+          document.getElementById('email').value = '';
+        }
+        alertBox.classList.remove('hidden');
+        loadCases();
+        loadNextCode();
+      } catch (err) {
+        alertBox.textContent = 'Network error. Is the server running?';
+        alertBox.classList.add('error');
+        alertBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Code & Send Invitation';
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      window.location.href = '/';
+    });
+
+    const modal = document.getElementById('modal');
+    const modalBody = document.getElementById('modal-body');
+    const modalError = document.getElementById('modal-error');
+    const modalCopyRow = document.getElementById('modal-copy-row');
+    const modalTitle = document.getElementById('modal-title');
+    let modalStatementText = '';
+
+    document.getElementById('cases-body').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-stmt]');
+      if (!btn || btn.disabled) return;
+
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Generating...';
+
+      try {
+        const res = await fetch(`/api/admin/cases/${btn.dataset.stmt}/statement`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Statement generation failed');
+        modalTitle.textContent = 'Generated Statement';
+        modalStatementText = data.statement;
+        modalBody.innerHTML = data.html;
+        modalError.classList.add('hidden');
+        modalCopyRow.classList.remove('hidden');
+        modal.classList.remove('hidden');
+      } catch (err) {
+        modalTitle.textContent = 'Error';
+        modalBody.innerHTML = '';
+        modalError.textContent = err.message;
+        modalError.classList.remove('hidden');
+        modalCopyRow.classList.add('hidden');
+        modal.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+
+    document.getElementById('modal-close').addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+    document.getElementById('modal-copy').addEventListener('click', () => {
+      navigator.clipboard.writeText(modalStatementText).then(() => {
+        const btn = document.getElementById('modal-copy');
+        btn.textContent = 'Copied!';
+        setTimeout(() => (btn.textContent = 'Copy Statement'), 1500);
+      }).catch(() => {});
+    });
+
+    ensureAuth().then(() => { loadNextCode(); loadCases(); });
+  </script>
+</body>
+</html>

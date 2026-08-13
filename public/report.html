@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forensic Investigation Report</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">Forensic Investigation Portal</div>
+      <div class="sub">Investigator Report Form</div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div id="load-error" class="alert error hidden"></div>
+
+    <!-- ============ STEP 1 : Details ============ -->
+    <form id="details-form" class="hidden">
+      <div class="card">
+        <h1>Forensic Investigation Report</h1>
+        <p class="muted">Step 1 of 2 — Please complete all incident and vehicle details, then click Next.</p>
+        <div class="form-grid">
+          <div>
+            <label for="name">Name</label>
+            <input type="text" id="name" readonly>
+          </div>
+          <div>
+            <label for="case-code">Case Code</label>
+            <input type="text" id="case-code" readonly>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Incident Details</h2>
+        <div class="form-grid">
+          <div>
+            <label for="incident-date">Incident Date</label>
+            <input type="date" id="incident-date" required>
+          </div>
+          <div>
+            <label for="incident-location">Incident Location</label>
+            <input type="text" id="incident-location" placeholder="e.g. NH-48, near Gurugram" required>
+          </div>
+          <div class="full">
+            <label for="incident-description">Incident Description</label>
+            <textarea id="incident-description" placeholder="Describe the incident in detail..." required></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Vehicle Details</h2>
+        <div class="form-grid">
+          <div>
+            <label for="vehicle-number">Vehicle Registration Number</label>
+            <input type="text" id="vehicle-number" placeholder="e.g. DL-01-AB-1234" required>
+          </div>
+          <div>
+            <label for="vehicle-make-model">Make &amp; Model</label>
+            <input type="text" id="vehicle-make-model" placeholder="e.g. Maruti Suzuki Swift" required>
+          </div>
+          <div>
+            <label for="vehicle-type">Vehicle Type</label>
+            <select id="vehicle-type" required>
+              <option value="">-- Select --</option>
+              <option value="car">Car</option>
+              <option value="bike">Motorcycle</option>
+              <option value="truck">Truck</option>
+              <option value="bus">Bus</option>
+              <option value="auto">Auto Rickshaw</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label for="vehicle-color">Vehicle Color</label>
+            <input type="text" id="vehicle-color" placeholder="e.g. White" required>
+          </div>
+          <div class="full">
+            <label for="additional-notes">Additional Notes <span style="font-weight:400;color:#6b7280">(optional)</span></label>
+            <textarea id="additional-notes" placeholder="Any additional observations..."></textarea>
+          </div>
+        </div>
+        <div id="details-alert" class="alert hidden"></div>
+        <button type="submit" class="btn" id="next-btn" style="width:100%">Next — Generate Cross Questions</button>
+      </div>
+    </form>
+
+    <!-- ============ STEP 2 : Cross Questions ============ -->
+    <div id="cross-step" class="hidden">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h1 style="margin:0">AI Cross Questions</h1>
+          <button type="button" class="btn ghost" id="back-btn">Back to Details</button>
+        </div>
+        <p class="muted">Step 2 of 2 — Generated from the details you entered. Answer each question; answers are saved with the report.</p>
+        <div id="cross-loading">
+          <p style="color:#1a237e;font-weight:600">Generating questions...</p>
+        </div>
+        <div id="cross-error" class="alert error hidden"></div>
+        <div id="cross-questions"></div>
+        <div class="row-actions" id="cross-actions" style="display:none">
+          <span class="muted" id="cross-meta" style="margin:0;font-size:12px"></span>
+        </div>
+      </div>
+
+      <div class="card" id="submit-card" style="display:none">
+        <div id="submit-alert" class="alert hidden"></div>
+        <button type="button" class="btn" id="submit-btn" style="width:100%">Submit Report</button>
+      </div>
+    </div>
+
+    <div id="success" class="card hidden">
+      <h1 id="success-title">Report Submitted</h1>
+      <p class="muted" id="success-msg">Thank you. Your forensic report for case <strong id="success-code"></strong> has been recorded successfully.</p>
+
+      <button type="button" class="btn" id="statement-btn">Generate Statement</button>
+      <div id="statement-loading" class="hidden">
+        <p style="color:#1a237e;font-weight:600">Generating your statement...</p>
+      </div>
+      <div id="statement-error" class="alert error hidden"></div>
+      <div id="statement-box" class="statement hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <strong>Your Statement</strong>
+          <button type="button" class="btn ghost" id="copy-btn" style="margin-top:0">Copy</button>
+        </div>
+        <p id="statement-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const caseCode = params.get('case');
+
+    const loadError = document.getElementById('load-error');
+    const detailsForm = document.getElementById('details-form');
+    const detailsAlert = document.getElementById('details-alert');
+    const crossStep = document.getElementById('cross-step');
+    const submitAlert = document.getElementById('submit-alert');
+
+    let currentQuestions = [];
+
+    const FIELD_IDS = [
+      'incident-date', 'incident-location', 'incident-description',
+      'vehicle-number', 'vehicle-make-model', 'vehicle-type', 'vehicle-color',
+    ];
+
+    function collectFields() {
+      return {
+        incident_date: document.getElementById('incident-date').value,
+        incident_location: document.getElementById('incident-location').value.trim(),
+        incident_description: document.getElementById('incident-description').value.trim(),
+        vehicle_number: document.getElementById('vehicle-number').value.trim(),
+        vehicle_make_model: document.getElementById('vehicle-make-model').value.trim(),
+        vehicle_type: document.getElementById('vehicle-type').value,
+        vehicle_color: document.getElementById('vehicle-color').value.trim(),
+        additional_notes: document.getElementById('additional-notes').value.trim(),
+      };
+    }
+
+    function allFilled(fields) {
+      const required = ['incident_date', 'incident_location', 'incident_description',
+        'vehicle_number', 'vehicle_make_model', 'vehicle_type', 'vehicle_color'];
+      return required.every((k) => fields[k]);
+    }
+
+    function renderQuestions() {
+      const container = document.getElementById('cross-questions');
+      if (!currentQuestions.length) {
+        container.innerHTML = '';
+        return;
+      }
+      container.innerHTML = currentQuestions.map((q, i) => `
+        <div class="xq">
+          <p class="xq-text">${i + 1}. ${escapeHtml(q)}</p>
+          <textarea data-idx="${i}" placeholder="Type your answer here..." rows="2"></textarea>
+        </div>
+      `).join('');
+      document.getElementById('cross-meta').textContent = `${currentQuestions.length} questions generated`;
+    }
+
+    async function generateQuestions() {
+      const loading = document.getElementById('cross-loading');
+      const errorBox = document.getElementById('cross-error');
+      loading.style.display = 'block';
+      errorBox.classList.add('hidden');
+      document.getElementById('cross-actions').style.display = 'none';
+      document.getElementById('submit-card').style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/public/cases/${encodeURIComponent(caseCode)}/cross-questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: collectFields() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Generation failed');
+        currentQuestions = data.questions;
+        renderQuestions();
+        document.getElementById('cross-actions').style.display = 'flex';
+        document.getElementById('submit-card').style.display = 'block';
+      } catch (err) {
+        currentQuestions = [];
+        errorBox.textContent = err.message + ' (Go back and click Next again, or submit the report without answers.)';
+        errorBox.classList.remove('hidden');
+        document.getElementById('submit-card').style.display = 'block';
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function showAlert(box, message, type) {
+      box.textContent = message;
+      box.className = 'alert ' + type;
+    }
+
+    detailsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fields = collectFields();
+
+      if (!allFilled(fields)) {
+        showAlert(detailsAlert, 'Please fill in all incident and vehicle details before continuing.', 'error');
+        detailsAlert.classList.remove('hidden');
+        return;
+      }
+      detailsAlert.classList.add('hidden');
+
+      const nextBtn = document.getElementById('next-btn');
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Generating...';
+
+      detailsForm.classList.add('hidden');
+      crossStep.classList.remove('hidden');
+
+      await generateQuestions();
+      window.scrollTo(0, 0);
+
+      nextBtn.disabled = false;
+      nextBtn.textContent = 'Next — Generate Cross Questions';
+    });
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      crossStep.classList.add('hidden');
+      detailsForm.classList.remove('hidden');
+      window.scrollTo(0, 0);
+    });
+
+    document.getElementById('submit-btn').addEventListener('click', async () => {
+      submitAlert.classList.add('hidden');
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      const crossQuestions = currentQuestions.map((q, i) => ({
+        question: q,
+        answer: (document.querySelector(`textarea[data-idx="${i}"]`) || {}).value || '',
+      }));
+
+      try {
+        const res = await fetch(`/api/public/cases/${encodeURIComponent(caseCode)}/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...collectFields(), cross_questions: crossQuestions }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(submitAlert, data.error || 'Submission failed', 'error');
+          submitAlert.classList.remove('hidden');
+        } else {
+          crossStep.classList.add('hidden');
+          document.getElementById('success-code').textContent = data.case_code;
+          document.getElementById('success').classList.remove('hidden');
+        }
+      } catch (err) {
+        showAlert(submitAlert, 'Network error. Please try again.', 'error');
+        submitAlert.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit Report';
+      }
+    });
+
+    const statementBtn = document.getElementById('statement-btn');
+    const statementLoading = document.getElementById('statement-loading');
+    const statementError = document.getElementById('statement-error');
+    const statementBox = document.getElementById('statement-box');
+    const statementText = document.getElementById('statement-text');
+    let generatedStatementText = '';
+
+    statementBtn.addEventListener('click', async () => {
+      statementBtn.disabled = true;
+      statementLoading.classList.remove('hidden');
+      statementError.classList.add('hidden');
+      statementBox.classList.add('hidden');
+
+      try {
+        const res = await fetch(`/api/public/cases/${encodeURIComponent(caseCode)}/statement`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Statement generation failed');
+        generatedStatementText = data.statement;
+        statementText.innerHTML = data.html;
+        statementBox.classList.remove('hidden');
+      } catch (err) {
+        statementError.textContent = err.message;
+        statementError.classList.remove('hidden');
+      } finally {
+        statementBtn.disabled = false;
+        statementLoading.classList.add('hidden');
+      }
+    });
+
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      navigator.clipboard.writeText(generatedStatementText).then(() => {
+        const copyBtn = document.getElementById('copy-btn');
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
+      }).catch(() => {});
+    });
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    if (!caseCode) {
+      loadError.textContent = 'Invalid or missing case code. Please use the link from your email.';
+      loadError.classList.remove('hidden');
+    } else {
+      fetch(`/api/public/cases/${encodeURIComponent(caseCode)}`)
+        .then(async (res) => {
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'Case not found');
+          }
+          return res.json();
+        })
+        .then((data) => {
+          document.getElementById('case-code').value = data.case_code;
+          document.getElementById('name').value = data.name;
+          if (data.status === 'report_submitted') {
+            document.getElementById('success-code').textContent = data.case_code;
+            document.getElementById('success-title').textContent = 'Report Already Submitted';
+            document.getElementById('success-msg').textContent =
+              `A report for case ${data.case_code} has already been submitted. You can view or regenerate the statement below.`;
+            document.getElementById('success').classList.remove('hidden');
+            return;
+          }
+          detailsForm.classList.remove('hidden');
+        })
+        .catch((err) => {
+          loadError.textContent = err.message + '. Please contact the administrator.';
+          loadError.classList.remove('hidden');
+        });
+    }
+  </script>
+</body>
+</html>

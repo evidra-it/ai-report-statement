@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forensic Investigation Portal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="center-page">
+    <div class="login-box">
+      <div class="login-logo">
+        <div class="brand">Forensic Investigation Portal</div>
+        <div class="tag">Superadmin Access</div>
+        <form id="login-form">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" required>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required>
+          <div id="alert" class="alert error hidden"></div>
+          <button type="submit" class="btn" id="login-btn" style="width:100%">Sign in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const alertBox = document.getElementById('alert');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.classList.add('hidden');
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alertBox.textContent = data.error || 'Login failed';
+          alertBox.classList.remove('hidden');
+        } else {
+          window.location.href = '/admin.html';
+        }
+      } catch (err) {
+        alertBox.textContent = 'Network error. Is the server running?';
+        alertBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+      }
+    });
+
+    fetch('/api/me').then(r => r.json()).then(d => {
+      if (d.authenticated) window.location.href = '/admin.html';
+    }).catch(() => {});
+  </script>
+</body>
+</html>

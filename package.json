@@ -1,0 +1,17 @@
+{
+  "name": "forensic-investigator-poc",
+  "version": "0.1.0",
+  "description": "Forensic investigator POC - superadmin login, case initiator, public report form with email invitations",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "dev": "node --watch --experimental-sqlite server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "nodemailer": "^9.0.5"
+  }
+}
