@@ -3,3 +3,6 @@ node_modules/
 data/
 emails/
 *.log
+cookies.txt
+stmt.json
+stmt_timing.txt
