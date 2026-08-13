@@ -9,17 +9,21 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'no-reply@localhost';
 const FROM_NAME = process.env.FROM_NAME || 'Forensic Investigation Portal';
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 
 const emailsDir = path.join(__dirname, 'emails');
 if (!fs.existsSync(emailsDir)) fs.mkdirSync(emailsDir, { recursive: true });
 
 let transporter = null;
-if (SMTP_HOST) {
+if (SMTP_HOST && !BREVO_API_KEY) {
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
     auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
   });
 }
 
@@ -54,11 +58,15 @@ function renderInviteEmail({ name, caseCode }) {
 async function sendInviteEmail({ name, caseCode, email }) {
   const { subject, html } = renderInviteEmail({ name, caseCode });
 
+  if (BREVO_API_KEY) {
+    return sendViaBrevoApi({ name, email, subject, html, caseCode });
+  }
+
   if (!transporter) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const file = path.join(emailsDir, `${caseCode}-${stamp}.html`);
     fs.writeFileSync(file, html);
-    console.log(`[mailer] MOCK MODE (SMTP_HOST not set): email to ${email}`);
+    console.log(`[mailer] MOCK MODE (no SMTP_HOST and no BREVO_API_KEY): email to ${email}`);
     console.log(`[mailer] Subject: ${subject}`);
     console.log(`[mailer] Preview saved to ${file}`);
     console.log(`[mailer] Link: ${reportLink(caseCode)}`);
@@ -78,6 +86,43 @@ async function sendInviteEmail({ name, caseCode, email }) {
     console.error('[mailer] SMTP send failed:', err.message);
     throw err;
   }
+}
+
+async function sendViaBrevoApi({ name, email, subject, html, caseCode }) {
+  const body = {
+    sender: { name: FROM_NAME, email: FROM_EMAIL },
+    to: [{ email, name }],
+    subject,
+    htmlContent: html,
+    tags: ['forensic-investigator', caseCode],
+  };
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        console.log(`[mailer] Sent via Brevo API to ${email} (messageId=${data.messageId})`);
+        return { mock: false, messageId: data.messageId };
+      }
+      lastErr = new Error(`Brevo API ${res.status} ${res.statusText}: ${JSON.stringify(data)}`);
+      console.error(`[mailer] Brevo API attempt ${attempt}/2 failed:`, lastErr.message);
+    } catch (err) {
+      lastErr = err;
+      console.error(`[mailer] Brevo API attempt ${attempt}/2 network error:`, err.message);
+    }
+    if (attempt === 1) await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw lastErr;
 }
 
 module.exports = { sendInviteEmail };
