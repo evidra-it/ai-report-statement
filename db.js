@@ -132,6 +132,18 @@ function pgAdapter() {
     return sql.replace(/\?/g, () => `$${++i}`);
   };
 
+  const hasId = new Map();
+  async function tableHasColumnId(table) {
+    if (hasId.has(table)) return hasId.get(table);
+    const res = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'id'`,
+      [table]
+    );
+    const exists = res.rowCount > 0;
+    hasId.set(table, exists);
+    return exists;
+  }
+
   return {
     dialect: 'postgres',
     async exec(sql) {
@@ -148,8 +160,11 @@ function pgAdapter() {
     async run(sql, ...params) {
       const trimmed = convert(sql.trim());
       if (/^INSERT/i.test(trimmed) && !/RETURNING/i.test(trimmed)) {
-        const res = await pool.query(`${trimmed} RETURNING id`, params);
-        return { lastInsertRowid: Number(res.rows[0].id), changes: res.rowCount };
+        const m = /INSERT INTO\s+(\w+)/i.exec(trimmed);
+        if (m && (await tableHasColumnId(m[1]))) {
+          const res = await pool.query(`${trimmed} RETURNING id`, params);
+          return { lastInsertRowid: Number(res.rows[0].id), changes: res.rowCount };
+        }
       }
       const res = await pool.query(trimmed, params);
       return { lastInsertRowid: null, changes: res.rowCount };
