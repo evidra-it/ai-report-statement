@@ -38,6 +38,11 @@ Rules:
 - Open the introduction on its own, then the narration as several short paragraphs, then a short "Observations / additional details" paragraph if the cross-question answers added material worth capturing, and finish with the confirmation line "I confirm that the above statement is true to the best of my knowledge." followed by the person's name on one line and the statement date on the final line.
 - Use the exact statement date given in the details.
 
+CRITICAL - ALWAYS a complete statement:
+- Never stop after the introduction. The output must ALWAYS be a full affidavit with all four sections in order: (1) introduction, (2) narration, (3) observations/additional details, (4) confirmation line + name + date.
+- If some report fields are missing, DO NOT print the introduction alone and stop. Instead, still produce the full structure: narrate using whatever details DO exist, and for anything unknown write a short, honest line such as "The incident details were not provided in the report" rather than inventing facts.
+- Produce enough length for a real statement (multiple sentences / paragraphs), never a single line.
+
 Output the statement as an HTML fragment. Rules for the HTML:
 - Use ONLY <p>, <strong>, <em>, <ul>, <ol>, <li>, <span>, and <br>.
 - One <p> per paragraph. The person's full name may be wrapped in <strong> at first mention.
@@ -129,7 +134,7 @@ function parseQuestions(text) {
     .filter((line) => line.length > 0);
 }
 
-async function attemptModel(model, systemPrompt, userPrompt, maxTokens, timeoutMs) {
+async function attemptModel(model, systemPrompt, userPrompt, maxTokens, timeoutMs, temperature) {
   const started = Date.now();
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -146,7 +151,7 @@ async function attemptModel(model, systemPrompt, userPrompt, maxTokens, timeoutM
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.7,
+        temperature: temperature ?? 0.7,
         max_tokens: maxTokens,
       }),
       signal: AbortSignal.timeout(timeoutMs),
@@ -179,7 +184,7 @@ async function attemptModel(model, systemPrompt, userPrompt, maxTokens, timeoutM
   }
 }
 
-async function callModel(systemPrompt, userPrompt, maxTokens) {
+async function callModel(systemPrompt, userPrompt, maxTokens, temperature) {
   if (!OPENROUTER_API_KEY) {
     log.error('[ai] call skipped - OPENROUTER_API_KEY not configured');
     throw new Error('OPENROUTER_API_KEY is not configured in .env');
@@ -192,7 +197,7 @@ async function callModel(systemPrompt, userPrompt, maxTokens) {
   for (const model of MODELS) {
     log.info(`[ai] trying model=${model} inputChars=${userPrompt.length}`);
     for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
-      const outcome = await attemptModel(model, systemPrompt, userPrompt, maxTokens, FETCH_TIMEOUT_MS);
+      const outcome = await attemptModel(model, systemPrompt, userPrompt, maxTokens, FETCH_TIMEOUT_MS, temperature);
       if (outcome.ok) return outcome.text;
 
       lastError = outcome.error;
@@ -226,7 +231,7 @@ async function generateCrossQuestions(fields) {
 }
 
 async function generateStatement(report) {
-  const raw = await callModel(STATEMENT_SYSTEM_PROMPT, buildStatementPrompt(report), 2048);
+  const raw = await callModel(STATEMENT_SYSTEM_PROMPT, buildStatementPrompt(report), 2048, 0.4);
   const html = ensureHtmlBlocks(sanitizeHtml(raw));
   return { html, text: htmlToText(html) };
 }

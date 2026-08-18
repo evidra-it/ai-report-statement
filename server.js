@@ -147,6 +147,17 @@ app.post('/api/public/cases/:caseCode/report', async (req, res) => {
 
   await db.run("UPDATE cases SET status = 'report_submitted' WHERE id = ?", c.id);
 
+  // Generate + persist the statement only AFTER the report is saved, so the
+  // AI always reads the freshly-submitted record (not a stale/empty one).
+  const report = await db.get('SELECT * FROM reports WHERE case_code = ?', c.case_code);
+  try {
+    const { html, text } = await generateStatement(report);
+    await db.run('UPDATE reports SET statement_html = ?, statement_text = ? WHERE id = ?', html, text, report.id);
+    log.info(`[report] statement generated for ${c.case_code}`);
+  } catch (err) {
+    log.error(`[report] statement generation failed for ${c.case_code}: ${err.message}`);
+  }
+
   log.info(`[report] submitted for ${c.case_code} by ${c.name} (${crossQuestions ? crossQuestions.length + ' chars q&a' : 'no cross questions'})`);
   res.status(201).json({ ok: true, case_code: c.case_code });
 });
