@@ -9,10 +9,13 @@ const dispatcher = new Agent({
   bodyTimeout: 40000,
 });
 
-const MODELS = (process.env.AI_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free,openai/gpt-oss-20b:free,google/gemma-4-31b-it:free')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+const MODELS = [
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'openai/gpt-oss-20b:free',
+  'google/gemma-4-31b-it:free',
+];
 
 const SYSTEM_PROMPT = `You are a forensic investigation assistant. You are given the details a forensic investigator has entered on a report form (incident details and vehicle details). Based ONLY on the details provided by the user, generate cross-examination questions that a claim/forensic team would ask to probe, verify, and dig deeper into that specific case.
 
