@@ -147,16 +147,13 @@ app.post('/api/public/cases/:caseCode/report', async (req, res) => {
 
   await db.run("UPDATE cases SET status = 'report_submitted' WHERE id = ?", c.id);
 
-  // Generate + persist the statement only AFTER the report is saved, so the
-  // AI always reads the freshly-submitted record (not a stale/empty one).
+  // Fire-and-forget: generate + persist the statement in the background AFTER
+  // the report is saved. The client's statement request (get-or-create) joins
+  // this same in-flight promise, so it is never generated twice.
   const report = await db.get('SELECT * FROM reports WHERE case_code = ?', c.case_code);
-  try {
-    const { html, text } = await generateStatement(report);
-    await db.run('UPDATE reports SET statement_html = ?, statement_text = ? WHERE id = ?', html, text, report.id);
-    log.info(`[report] statement generated for ${c.case_code}`);
-  } catch (err) {
-    log.error(`[report] statement generation failed for ${c.case_code}: ${err.message}`);
-  }
+  getOrCreateStatement(report)
+    .then(() => log.info(`[report] statement generated for ${c.case_code}`))
+    .catch((err) => log.error(`[report] statement generation failed for ${c.case_code}: ${err.message}`));
 
   log.info(`[report] submitted for ${c.case_code} by ${c.name} (${crossQuestions ? crossQuestions.length + ' chars q&a' : 'no cross questions'})`);
   res.status(201).json({ ok: true, case_code: c.case_code });
@@ -164,15 +161,24 @@ app.post('/api/public/cases/:caseCode/report', async (req, res) => {
 
 const crossCache = new Map();
 const CROSS_CACHE_TTL = 60 * 1000;
+const statementFutures = new Map();
 
-async function getOrCreateStatement(report) {
+function getOrCreateStatement(report) {
   if (report.statement_html) {
-    return { statement: report.statement_text, html: report.statement_html, cached: true };
+    return Promise.resolve({ statement: report.statement_text, html: report.statement_html, cached: true });
   }
+  const id = report.id;
+  if (statementFutures.has(id)) return statementFutures.get(id);
+
   log.info(`[ai] generating statement for ${report.case_code}`);
-  const { html, text } = await generateStatement(report);
-  await db.run('UPDATE reports SET statement_html = ?, statement_text = ? WHERE id = ?', html, text, report.id);
-  return { statement: text, html, cached: false };
+  const future = (async () => {
+    const { html, text } = await generateStatement(report);
+    await db.run('UPDATE reports SET statement_html = ?, statement_text = ? WHERE id = ?', html, text, report.id);
+    return { statement: text, html, cached: false };
+  })();
+  future.catch(() => {}).then(() => statementFutures.delete(id));
+  statementFutures.set(id, future);
+  return future;
 }
 
 app.post('/api/public/cases/:caseCode/cross-questions', async (req, res) => {
