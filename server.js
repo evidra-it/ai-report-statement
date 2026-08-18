@@ -58,7 +58,8 @@ app.get('/api/cases/next-code', isAdmin, async (req, res) => {
 app.get('/api/cases', isAdmin, async (req, res) => {
   const cases = await db.all(
       `SELECT c.*, 
-        (SELECT COUNT(*) FROM reports r WHERE r.case_id = c.id) AS reports_count
+        (SELECT COUNT(*) FROM reports r WHERE r.case_id = c.id) AS reports_count,
+        (SELECT CASE WHEN r2.statement_html IS NOT NULL AND r2.statement_html != '' THEN 1 ELSE 0 END FROM reports r2 WHERE r2.case_id = c.id) AS has_statement
         FROM cases c ORDER BY c.id DESC`
     );
   res.json(cases);
@@ -153,6 +154,16 @@ app.post('/api/public/cases/:caseCode/report', async (req, res) => {
 const crossCache = new Map();
 const CROSS_CACHE_TTL = 60 * 1000;
 
+async function getOrCreateStatement(report) {
+  if (report.statement_html) {
+    return { statement: report.statement_text, html: report.statement_html, cached: true };
+  }
+  log.info(`[ai] generating statement for ${report.case_code}`);
+  const { html, text } = await generateStatement(report);
+  await db.run('UPDATE reports SET statement_html = ?, statement_text = ? WHERE id = ?', html, text, report.id);
+  return { statement: text, html, cached: false };
+}
+
 app.post('/api/public/cases/:caseCode/cross-questions', async (req, res) => {
   const c = await db.get('SELECT * FROM cases WHERE case_code = ?', req.params.caseCode);
   if (!c) return res.status(404).json({ error: 'Case not found' });
@@ -185,10 +196,9 @@ app.post('/api/public/cases/:caseCode/statement', async (req, res) => {
   const report = await db.get('SELECT * FROM reports WHERE case_code = ?', req.params.caseCode);
   if (!report) return res.status(404).json({ error: 'No report found for this case yet' });
 
-  log.info(`[ai] statement request for ${req.params.caseCode}`);
   try {
-    const { html, text } = await generateStatement(report);
-    res.json({ statement: text, html });
+    const out = await getOrCreateStatement(report);
+    res.json(out);
   } catch (err) {
     log.error(`[ai] statement generation failed for ${req.params.caseCode}: ${err.message}`);
     res.status(502).json({ error: 'Statement generation failed: ' + err.message });
@@ -199,10 +209,9 @@ app.post('/api/admin/cases/:id/statement', isAdmin, async (req, res) => {
   const report = await db.get('SELECT * FROM reports WHERE case_id = ?', req.params.id);
   if (!report) return res.status(404).json({ error: 'No report submitted for this case yet' });
 
-  log.info(`[ai] admin statement request for case id ${req.params.id}`);
   try {
-    const { html, text } = await generateStatement(report);
-    res.json({ statement: text, html });
+    const out = await getOrCreateStatement(report);
+    res.json(out);
   } catch (err) {
     log.error(`[ai] admin statement failed for case ${req.params.id}: ${err.message}`);
     res.status(502).json({ error: 'Statement generation failed: ' + err.message });

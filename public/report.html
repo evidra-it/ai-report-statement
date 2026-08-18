@@ -117,7 +117,6 @@
       <h1 id="success-title">Report Submitted</h1>
       <p class="muted" id="success-msg">Thank you. Your forensic report for case <strong id="success-code"></strong> has been recorded successfully.</p>
 
-      <button type="button" class="btn" id="statement-btn">Generate Statement</button>
       <div id="statement-loading" class="hidden">
         <p style="color:#1a237e;font-weight:600">Generating your statement...</p>
       </div>
@@ -274,6 +273,7 @@
           crossStep.classList.add('hidden');
           document.getElementById('success-code').textContent = data.case_code;
           document.getElementById('success').classList.remove('hidden');
+          loadStatement();
         }
       } catch (err) {
         showAlert(submitAlert, 'Network error. Please try again.', 'error');
@@ -284,15 +284,13 @@
       }
     });
 
-    const statementBtn = document.getElementById('statement-btn');
     const statementLoading = document.getElementById('statement-loading');
     const statementError = document.getElementById('statement-error');
     const statementBox = document.getElementById('statement-box');
     const statementText = document.getElementById('statement-text');
     let generatedStatementText = '';
 
-    statementBtn.addEventListener('click', async () => {
-      statementBtn.disabled = true;
+    async function loadStatement() {
       statementLoading.classList.remove('hidden');
       statementError.classList.add('hidden');
       statementBox.classList.add('hidden');
@@ -308,10 +306,9 @@
         statementError.textContent = err.message;
         statementError.classList.remove('hidden');
       } finally {
-        statementBtn.disabled = false;
         statementLoading.classList.add('hidden');
       }
-    });
+    }
 
     document.getElementById('copy-btn').addEventListener('click', () => {
       navigator.clipboard.writeText(generatedStatementText).then(() => {
@@ -346,6 +343,7 @@
             document.getElementById('success-msg').textContent =
               `A report for case ${data.case_code} has already been submitted. You can view or regenerate the statement below.`;
             document.getElementById('success').classList.remove('hidden');
+            loadStatement();
             return;
           }
           detailsForm.classList.remove('hidden');

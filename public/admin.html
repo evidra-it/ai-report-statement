@@ -110,7 +110,7 @@
           <td>${escapeHtml(c.email)}</td>
           <td><span class="badge ${c.status}">${statusMap[c.status] || c.status}</span></td>
           <td>${c.created_at}</td>
-          <td>${c.status === 'report_submitted' ? `<button class="btn ghost" data-stmt="${c.id}" style="margin-top:0">Generate Statement</button>` : '<span style="color:#9ca3af">—</span>'}</td>
+          <td>${c.status === 'report_submitted' ? `<button class="btn ghost" data-stmt="${c.id}" style="margin-top:0">${c.has_statement == 1 ? 'View Statement' : 'Generate Statement'}</button>` : '<span style="color:#9ca3af">—</span>'}</td>
         </tr>
       `).join('');
     }

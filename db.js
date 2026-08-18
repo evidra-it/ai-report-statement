@@ -37,6 +37,8 @@ const CREATE_TABLES = `
     vehicle_color TEXT,
     additional_notes TEXT,
     cross_questions TEXT,
+    statement_html TEXT,
+    statement_text TEXT,
     submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -79,6 +81,8 @@ const CREATE_TABLES_PG = `
     vehicle_color TEXT,
     additional_notes TEXT,
     cross_questions TEXT,
+    statement_html TEXT,
+    statement_text TEXT,
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
@@ -194,8 +198,10 @@ async function initDb() {
   await conn.exec(conn.dialect === 'postgres' ? CREATE_TABLES_PG : CREATE_TABLES);
 
   const cols = await conn.listColumns('reports');
-  if (!cols.includes('cross_questions')) {
-    await conn.exec('ALTER TABLE reports ADD COLUMN cross_questions TEXT');
+  for (const col of ['cross_questions', 'statement_html', 'statement_text']) {
+    if (!cols.includes(col)) {
+      await conn.exec(`ALTER TABLE reports ADD COLUMN ${col} TEXT`);
+    }
   }
 
   const admin = await conn.get('SELECT id FROM admins WHERE username = ?', process.env.ADMIN_USERNAME || 'superadmin');
