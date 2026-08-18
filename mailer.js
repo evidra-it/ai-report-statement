@@ -32,12 +32,13 @@ const transportChannel = () =>
   BREVO_API_KEY ? 'brevo-api (HTTPS/443)' : SMTP_HOST ? `smtp (${SMTP_HOST}:${SMTP_PORT})` : 'mock (no SMTP, no Brevo key)';
 log.info(`[mailer] using transport channel: ${transportChannel()}`);
 
-function reportLink(caseCode) {
-  return `${BASE_URL}/report.html?case=${encodeURIComponent(caseCode)}`;
+function reportLink(caseCode, base) {
+  const b = base || process.env.BASE_URL || 'http://localhost:3000';
+  return `${b}/report.html?case=${encodeURIComponent(caseCode)}`;
 }
 
-function renderInviteEmail({ name, caseCode }) {
-  const link = reportLink(caseCode);
+function renderInviteEmail({ name, caseCode, baseUrl }) {
+  const link = reportLink(caseCode, baseUrl);
   const subject = `Forensic Investigation Report Required - Case ${caseCode}`;
   const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden">
@@ -60,8 +61,8 @@ function renderInviteEmail({ name, caseCode }) {
   return { subject, html };
 }
 
-async function sendInviteEmail({ name, caseCode, email }) {
-  const { subject, html } = renderInviteEmail({ name, caseCode });
+async function sendInviteEmail({ name, caseCode, email, baseUrl }) {
+  const { subject, html } = renderInviteEmail({ name, caseCode, baseUrl });
 
   if (BREVO_API_KEY) {
     return sendViaBrevoApi({ name, email, subject, html, caseCode });
@@ -74,7 +75,7 @@ async function sendInviteEmail({ name, caseCode, email }) {
     log.info(`[mailer] MOCK MODE (no SMTP_HOST and no BREVO_API_KEY): email to ${email}`);
     log.info(`[mailer] Subject: ${subject}`);
     log.info(`[mailer] Preview saved to ${file}`);
-    log.info(`[mailer] Link: ${reportLink(caseCode)}`);
+    log.info(`[mailer] Link: ${reportLink(caseCode, baseUrl)}`);
     return { mock: true, previewPath: file };
   }
 

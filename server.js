@@ -81,7 +81,10 @@ app.post('/api/cases', isAdmin, async (req, res) => {
   log.info(`[case] created ${caseCode} for ${name} <${email}>`);
 
   try {
-    await sendInviteEmail({ name, email, caseCode });
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const reqBase = `${proto}://${host}`;
+    await sendInviteEmail({ name, email, caseCode, baseUrl: reqBase });
     db.prepare('UPDATE cases SET status = ?, email_sent_at = datetime(\'now\') WHERE id = ?').run('invited', caseRow.id);
     caseRow.status = 'invited';
     log.info(`[case] ${caseCode} email sent to ${email} (status=invited)`);
